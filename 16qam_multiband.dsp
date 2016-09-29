@@ -17,6 +17,7 @@ global =environment {
   PLLrate = hslider("PLLrate",1,0.01,15,0.01);
   PLLrate_training = hslider("PLLrate_training",2,0.01,15,0.01);
   PLL_rate = select2(switchtraining,PLLrate,PLLrate_training);
+  prefilter_order = 2;
 };
 
 // swap2 = si.bus(2)<:((!,_),(_,!));
@@ -80,10 +81,14 @@ with {
 // average(n) = (si.bus(n):>_):/(n);
 
 
-compute_phaseerror(cos1,sin1,cos2,sin2)=atan2(cos2,sin2)-atan2(cos1,sin1);
+compute_phaseerror(cos1,sin1,cos2,sin2)=atan2(cos1,sin1)-atan2(cos2,sin2);
+
+//-----------prefilter
+prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate):fi.highpass(global.prefilter_order,carrier-baudrate);
+
 //---------------------------------
 
-qam_single(carrier,baudrate,phase_error,input) = (phase_error,input):demodulator(carrier)<:((sampler(baudrate):(_,!,_,!):decider:remapper:rolloff<:si.bus(4)),si.bus(2)):(modulator(carrier),compute_phaseerror):ro.cross(2);
+qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),(sampler(baudrate):(_,!,_,!):decider:remapper:rolloff<:si.bus(4))):(compute_phaseerror,modulator(carrier));
 
 // qam_single_debug(carrier,phase_error) =  ((modulator(carrier),compute_phaseerror):swap2),:
 
@@ -91,4 +96,4 @@ qam_multi(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_si
 
 process = (qam_multi~(_)):(!,_);
 
-// process =demodulator;
+// process =fi.bandpass(4);
