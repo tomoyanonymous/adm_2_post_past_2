@@ -39,7 +39,7 @@ with {
 // ----------------sampling section
 clockdatarecovery(rate) = abs:fi.resonbp(rate,50,1):(>(0));
 
-sampler(rate) = sampler_mono(rate),sampler_mono(rate)
+sampler(rate) = (sampler_mono(rate),sampler_mono(rate)):ro.cross2
 with {
 sampler_mono(rate) = _<:(clockdatarecovery(rate),_)<:(ba.latch,_,!);
 };
@@ -51,12 +51,28 @@ with {
 decide_mono = _<:(abs,_):(>(2/3),>(0));
 };
 
+// ---------training section
+training_sequence(clock) = par(i,4,count_offset(clock,size,size*i):bitnoisetable)
+with {
+  bitnoisetable(input) = rdtable(size*4,no.noise,int(input)):(>(0));
+  size = 1<<16 ;
+  count_posedge(clock,length) = (clock-(clock:mem)):(>(0)):(+~_):(fmod(length));
+  count_offset(clock,length,offset) = count_posedge(clock,length)+offset;
+};
+switchbits(bit1,bit2,bit3,bit4,tbit1,tbit2,tbit3,tbit4) = (sbit1,sbit2,sbit3,sbit4)
+with{
+  selbit(bit,tbit) = select2(global.switchtraining,bit,tbit);
+  sbit1=selbit(bit1,tbit1);
+  sbit2=selbit(bit2,tbit2);
+  sbit3=selbit(bit3,tbit3);
+  sbit4=selbit(bit4,tbit4);
+};
 // ----------------remapper section
 
 remapper(bit1,bit2,bit3,bit4) = remapper_mono(bit1,bit2),remapper_mono(bit3,bit4)
 with {
   bitscale(bmin,bmax) = *(bmax-bmin)+bmin;
-  remapper_mono(bit1,bit2) =( bit1:bitscale(1/3,1) ) * ( bit2:bitscale(-1,1) );
+  remapper_mono(b1,b2) =(b1:bitscale(1/3,1) ) * ( b2:bitscale(-1,1) );
 };
 
 //  ---------------rolloff baseband signal
@@ -88,7 +104,7 @@ prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate
 
 //---------------------------------
 
-qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),(sampler(baudrate):(_,!,_,!):decider:remapper:rolloff<:si.bus(4))):(compute_phaseerror,modulator(carrier));
+qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),(sampler(baudrate)<:(decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(4))):(compute_phaseerror,modulator(carrier));
 
 // qam_single_debug(carrier,phase_error) =  ((modulator(carrier),compute_phaseerror):swap2),:
 
