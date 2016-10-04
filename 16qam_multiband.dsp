@@ -2,12 +2,14 @@ import("stdfaust.lib");
 
 
 global =environment {
-  baudrate = 100;
+  isDebug = 0;
+  delay_time = 65536;
+  baudrate = 500;
   num_band = 12;
-  max_freq = 18000;
+  max_freq = 20000;
   min_freq = 250;
-  freq_margin = (max_freq - min_freq)/num_band;
-  freq_list = par(i,num_band,i*freq_margin+min_freq);
+  freq_margin = (max_freq - min_freq)/(num_band);
+  freq_list = par(i,num_band,i*freq_margin+min_freq+freq_margin/2);
   frequency(index) = ba.take(index+1,freq_list);
   dem_rolloff_order = 1;
   dem_rolloff_rate = 100;
@@ -17,10 +19,18 @@ global =environment {
   PLLrate = hslider("PLLrate",1,0.01,15,0.01);
   PLLrate_training = hslider("PLLrate_training",2,0.01,15,0.01);
   PLL_rate = select2(switchtraining,PLLrate,PLLrate_training);
+  debug_num = hslider("debugBand",1,1,num_band,1);
   prefilter_order = 2;
 };
 
-// swap2 = si.bus(2)<:((!,_),(_,!));
+
+
+debug_bus(num_band,debug_num) = par(i,7,debugbus_single)
+with {
+  isSelected = (i,debug_num):==;
+  debugbus_single = par(i,7,*(isSelected));
+};
+
 // ---------------demodulation section
 
 
@@ -97,19 +107,32 @@ with {
 // average(n) = (si.bus(n):>_):/(n);
 
 
-compute_phaseerror(cos1,sin1,cos2,sin2)=atan2(cos1,sin1)-atan2(cos2,sin2);
+compute_phaseerror(cos1,sin1,cos2,sin2)=atan2(cos1,sin1)-atan2(cos2:trainingdelay,sin2:trainingdelay)
+with {
+  trainingdelay = @(global.switchtraining*global.delay_time);
+};
 
 //-----------prefilter
 prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate):fi.highpass(global.prefilter_order,carrier-baudrate);
 
-//---------------------------------
+//---------------------------------release section
 
 qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),(sampler(baudrate)<:(decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(4))):(compute_phaseerror,modulator(carrier));
 
-// qam_single_debug(carrier,phase_error) =  ((modulator(carrier),compute_phaseerror):swap2),:
 
 qam_multi(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single(global.frequency(i),global.baudrate)):>(/(global.num_band),_);
 
-process = (qam_multi~(_)):(!,_);
+//--------------------debug section
+qam_single_debug(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),((sampler(baudrate)<:(decide_remap_rolloff,(_,_,!,_))),si.bus(2))):(compute_phaseerror,modulator(carrier),debug_bus(global.num_band,debug_num))
+with {
+  decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
+};
 
-// process =fi.bandpass(4);
+qam_multi_debug(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single(global.frequency(i),global.baudrate)):>(/(global.num_band),_,si.bus(7));
+
+// ---------select by isDebug(0:release,1:Debug)
+process = (release,debug):ba.select(global.isDebug,2)
+with{
+  release = (qam_multi~(_)):(!,_);
+  debug = (qam_multi_debug~(_)):(!,_,si.bus(7));
+}
