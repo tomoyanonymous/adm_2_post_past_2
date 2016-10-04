@@ -127,7 +127,10 @@ with {
   decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
 };
 
-qam_multi_debug(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single_debug(global.frequency(i),global.baudrate,i)):>(/(global.num_band),_,si.bus(7));
+qam_multi_debug(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single_debug(global.frequency(i),global.baudrate,i)):>(/(global.num_band),_,debug_routing)
+with {
+  debug_routing(in1,in2,in3,in4,in5,in6,in7) = (in1,in2,in3,in4,in6,in7,in5);
+}
 
 // ---------select by isDebug(0:release,1:Debug)
 process_pre =
