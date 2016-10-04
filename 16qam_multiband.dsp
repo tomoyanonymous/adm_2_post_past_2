@@ -2,7 +2,7 @@ import("stdfaust.lib");
 
 
 global =environment {
-  isDebug = 0;
+  isDebug = 1;
   delay_time = 65536;
   baudrate = 500;
   num_band = 12;
@@ -25,10 +25,9 @@ global =environment {
 
 
 
-debug_bus(num_band,debug_num) = par(i,7,debugbus_single)
+debug_bus(this_band_num,debug_num) = par(i,7,*(isSelected(this_band_num,debug_num)))
 with {
-  isSelected = (i,debug_num):==;
-  debugbus_single = par(i,7,*(isSelected));
+  isSelected(x,y) = (x,y):==;
 };
 
 // ---------------demodulation section
@@ -123,16 +122,18 @@ qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(c
 qam_multi(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single(global.frequency(i),global.baudrate)):>(/(global.num_band),_);
 
 //--------------------debug section
-qam_single_debug(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),((sampler(baudrate)<:(decide_remap_rolloff,(_,_,!,_))),si.bus(2))):(compute_phaseerror,modulator(carrier),debug_bus(global.num_band,debug_num))
+qam_single_debug(carrier,baudrate,band_index,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),((sampler(baudrate)<:(decide_remap_rolloff,(_,_,!,_))),si.bus(2))):(compute_phaseerror,modulator(carrier),debug_bus(band_index,global.debug_num))
 with {
   decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
 };
 
-qam_multi_debug(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single(global.frequency(i),global.baudrate)):>(/(global.num_band),_,si.bus(7));
+qam_multi_debug(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single_debug(global.frequency(i),global.baudrate,i)):>(/(global.num_band),_,si.bus(7));
 
 // ---------select by isDebug(0:release,1:Debug)
-process = (release,debug):ba.select(global.isDebug,2)
-with{
-  release = (qam_multi~(_)):(!,_);
-  debug = (qam_multi_debug~(_)):(!,_,si.bus(7));
-}
+process_pre =
+case{
+  (0) => (qam_multi~(_)):(!,_);
+  (1) => (qam_multi_debug~(_)):(!,_,si.bus(7));
+};
+
+process =process_pre(global.isDebug);
