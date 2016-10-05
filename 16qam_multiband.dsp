@@ -2,7 +2,7 @@ import("stdfaust.lib");
 
 
 global =environment {
-  isDebug = 1;
+  isDebug = 0;
   // delaytime in ms
   delay_time = int(hslider("delayTime",100,1,128000,1));
   // delay_time = 500;
@@ -122,7 +122,7 @@ prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate
 qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),(sampler(baudrate)<:(decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(4))):(compute_phaseerror,modulator(carrier));
 
 
-qam_multi(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single(global.frequency(i),global.baudrate)):>(/(global.num_band),_);
+qam_multi(input) = (input)<:par(i,global.num_band,(qam_single(global.frequency(i),global.baudrate)~(_))):>(!,_);
 
 //--------------------debug section
 qam_single_debug(carrier,baudrate,band_index,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),((sampler(baudrate)<:(decide_remap_rolloff,(_,_,!,_))),si.bus(2))):(compute_phaseerror,modulator(carrier),debug_bus(band_index,global.debug_num))
@@ -130,7 +130,7 @@ with {
   decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
 };
 
-qam_multi_debug(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single_debug(global.frequency(i),global.baudrate,i)):>(/(global.num_band),_,debug_routing)
+qam_multi_debug(input) = (input)<:par(i,global.num_band,(qam_single_debug(global.frequency(i),global.baudrate,i)~(_))):>(!,_,debug_routing)
 with {
   debug_routing(in1,in2,in3,in4,in5,in6,in7) = (in1,in2,in3,in4,in6,in7,in5);
 };
@@ -138,8 +138,8 @@ with {
 // ---------select by isDebug(0:release,1:Debug)
 process_pre =
 case{
-  (0) => (qam_multi~(_)):(!,_);
-  (1) => (qam_multi_debug~(_)):(!,_,si.bus(7));
+  (0) => qam_multi;
+  (1) => qam_multi_debug;
 };
 
 process =process_pre(global.isDebug);
