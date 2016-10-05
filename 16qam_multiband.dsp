@@ -3,8 +3,11 @@ import("stdfaust.lib");
 
 global =environment {
   isDebug = 1;
-  delay_time = 65536;
-  baudrate = 500;
+  // delaytime in ms
+  delay_time = int(hslider("delayTime",100,1,128000,1));
+  // delay_time = 500;
+  baudrate = hslider("baudrate",500,100,800,0.1);
+  // baudrate = 500;
   num_band = 12;
   max_freq = 20000;
   min_freq = 250;
@@ -46,7 +49,7 @@ with {
 };
 
 // ----------------sampling section
-clockdatarecovery(rate) = abs:fi.resonbp(rate,50,1):(>(0));
+clockdatarecovery(rate) = fi.highpass(1,rate*0.8):abs:fi.resonbp(rate,1000,1):(>(0));
 
 sampler(rate) = (sampler_mono(rate),sampler_mono(rate)):ro.cross2
 with {
@@ -130,7 +133,7 @@ with {
 qam_multi_debug(phase_error,input) = (phase_error,input)<:par(i,global.num_band,qam_single_debug(global.frequency(i),global.baudrate,i)):>(/(global.num_band),_,debug_routing)
 with {
   debug_routing(in1,in2,in3,in4,in5,in6,in7) = (in1,in2,in3,in4,in6,in7,in5);
-}
+};
 
 // ---------select by isDebug(0:release,1:Debug)
 process_pre =
