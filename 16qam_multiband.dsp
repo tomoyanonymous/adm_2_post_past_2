@@ -41,10 +41,10 @@ with {
 demodulator(carrier,phaseerror,input) = (input,((carrier+deltaphase):carrierphasor) )<:(cosmod,sinmod)
 with {
   deltaphase = phaseerror:fi.lowpass(1,global.PLL_rate);
-  tablesize = 1<<16;
-  carrierphasor = int(os.phasor(tablesize));
-  sinwave = rdtable(tablesize, os.sinwaveform(tablesize));
-  coswave = rdtable(tablesize, os.coswaveform(tablesize));
+  // tablesize = 1<<16;
+  carrierphasor = os.lf_sawpos;
+  sinwave = *(ma.PI*2):sin;
+  coswave = *(ma.PI*2):cos;
   sinmod(input,carrierphase) = (carrierphase:sinwave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
   cosmod(input,carrierphase) = (carrierphase:coswave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
 };
@@ -100,10 +100,10 @@ with {
 
 modulator(carrier,in1,in2) = modcarrierphasor<:(coswave,sinwave):(*(in1),*(in2)):+
 with {
-  modcarrierphasor = int(os.phasor(tablesize,carrier));
-  tablesize = 1<<16;
-  sinwave = rdtable(tablesize, os.sinwaveform(tablesize));
-  coswave = rdtable(tablesize, os.coswaveform(tablesize));
+  modcarrierphasor = os.lf_sawpos(carrier);
+  // tablesize = 1<<16;
+  sinwave = *(ma.PI*2):sin;
+  coswave = *(ma.PI*2):cos;
 };
 
 
