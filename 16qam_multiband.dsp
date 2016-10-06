@@ -7,9 +7,9 @@ global =environment {
   delay_time = int(hslider("delayTime",100,1,128000,1));
   // delay_time = 500;
   baudrate = hslider("baudrate",500,100,800,0.1);
-  clock_duty = hslider("duty",0.5,0,1,0.01);
+  clock_duty = hslider("duty",0.75,0,1,0.01);
   // baudrate = 500;
-  num_band = 2;
+  num_band = 3;
   max_freq = 20000;
   min_freq = 250;
   freq_margin = (max_freq - min_freq)/(num_band);
@@ -24,7 +24,7 @@ global =environment {
   PLLrate_training = hslider("PLLrate_training",2,0.01,15,0.01);
   PLL_rate = select2(switchtraining,PLLrate,PLLrate_training);
   debug_num = hslider("debugBand",1,1,num_band,1);
-  prefilter_order = 2;
+  prefilter_order = 3;
 };
 
 
