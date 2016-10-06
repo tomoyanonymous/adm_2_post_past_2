@@ -49,12 +49,10 @@ with {
 };
 
 // ----------------sampling section
-clockdatarecovery(rate) = fi.highpass(1,rate*0.8):abs:fi.resonbp(rate,1000,1):(>(0));
+// clockdatarecovery(rate) = fi.highpass(1,rate*0.8):abs:fi.resonbp(rate,1000,1):(>(0));
+sample_clock(rate) = os.lf_sawpos(rate):(>(0.5));
 
-sampler(rate) = (sampler_mono(rate),sampler_mono(rate)):ro.cross2
-with {
-sampler_mono(rate) = _<:(clockdatarecovery(rate),_)<:(ba.latch,_,!);
-};
+sampler(clock) = (ba.latch(clock),ba.latch(clock));
 
 // ---------------decide section
 
@@ -125,12 +123,12 @@ qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(c
 qam_multi(input) = (input)<:par(i,global.num_band,(qam_single(global.frequency(i),global.baudrate)~(_))):>(!,_);
 
 //--------------------debug section
-qam_single_debug(carrier,baudrate,band_index,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),((sampler(baudrate)<:(decide_remap_rolloff,(_,_,!,_))),si.bus(2))):(compute_phaseerror,modulator(carrier),debug_bus(band_index,global.debug_num))
+qam_single_debug(carrier,baudrate,band_index,phase_error,input,clock) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),(sampler(clock)<:((decider,training_sequence(clock)):switchbits:remapper:(rolloff<:si.bus(6))),si.bus(2)),si.bus(2),clock):(compute_phaseerror,modulator(carrier),debug_bus(band_index,global.debug_num))
 with {
-  decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
+  // decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
 };
 
-qam_multi_debug(input) = (input)<:par(i,global.num_band,(qam_single_debug(global.frequency(i),global.baudrate,i)~(_))):>(!,_,debug_routing)
+qam_multi_debug(input,clock) = (input,clock)<:par(i,global.num_band,(qam_single_debug(global.frequency(i),global.baudrate,i)~(_))):>(!,_,si.bus(7))
 with {
   debug_routing(in1,in2,in3,in4,in5,in6,in7) = (in1,in2,in3,in4,in6,in7,in5);
 };
@@ -139,7 +137,7 @@ with {
 process_pre =
 case{
   (0) => qam_multi;
-  (1) => qam_multi_debug;
+  (1) => (_,sample_clock(global.baudrate)):qam_multi_debug;
 };
 
 process =process_pre(global.isDebug);
