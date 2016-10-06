@@ -7,6 +7,7 @@ global =environment {
   delay_time = int(hslider("delayTime",100,1,128000,1));
   // delay_time = 500;
   baudrate = hslider("baudrate",500,100,800,0.1);
+  clock_duty = hslider("duty",0.5,0,1,0.01);
   // baudrate = 500;
   num_band = 2;
   max_freq = 20000;
@@ -14,9 +15,9 @@ global =environment {
   freq_margin = (max_freq - min_freq)/(num_band);
   freq_list = par(i,num_band,i*freq_margin+min_freq+freq_margin/2);
   frequency(index) = ba.take(index+1,freq_list);
-  dem_rolloff_order = 3;
+  dem_rolloff_order = 4;
   dem_rolloff_rate = hslider("dem_rolloffrate",500,100,800,0.1);
-  mod_rolloff_order = 3;
+  mod_rolloff_order = 4;
   mod_rolloff_rate = hslider("mod_rolloffrate",500,100,800,0.1);
   switchtraining = checkbox("Training");
   PLLrate = hslider("PLLrate",1,0.01,15,0.01);
@@ -37,7 +38,7 @@ with {
 
 
 
-demodulator(carrier,phaseerror,input) = (input,((carrier-deltaphase):carrierphasor) )<:(cosmod,sinmod)
+demodulator(carrier,phaseerror,input) = (input,((carrier+deltaphase):carrierphasor) )<:(cosmod,sinmod)
 with {
   deltaphase = phaseerror:fi.lowpass(1,global.PLL_rate);
   tablesize = 1<<16;
@@ -50,9 +51,12 @@ with {
 
 // ----------------sampling section
 // clockdatarecovery(rate) = fi.highpass(1,rate*0.8):abs:fi.resonbp(rate,1000,1):(>(0));
-sample_clock(rate) = os.lf_sawpos(rate):(>(0.5));
+sample_clock(rate) = os.lf_sawpos(rate);
 
-sampler(clock) = (ba.latch(clock),ba.latch(clock));
+sampler(clock) =(ba.latch(c),ba.latch(c))
+with {
+    c = clock:(>(global.clock_duty));
+};
 
 // ---------------decide section
 
@@ -62,7 +66,7 @@ decide_mono = _<:(abs,_):(>(2/3),>(0));
 };
 
 // ---------training section
-training_sequence(clock) = par(i,4,count_offset(clock,size,size*i):bitnoisetable)
+training_sequence(clock) = par(i,4,count_offset(clock*(-1),size,size*i):bitnoisetable)
 with {
   bitnoisetable(input) = rdtable(size*4,no.noise,int(input)):(>(0));
   size = 1<<16 ;
@@ -112,8 +116,18 @@ with {
   trainingdelay = @(global.switchtraining*global.delay_time);
 };
 
+// automatic gain controllable
+autogain(input) = input/(gain_ratio+0.001)
+  with {
+    correct = hslider("gain",0.707,0,1,0.01);
+    inv_min(minus) = (minus,_):-;
+    estimate_gain=(_<:(*)):sqrt:fi.lowpass(1,hslider("agc_rate",5,0.1,100,0.01));
+    gain_ratio = ((input:estimate_gain)/(correct+0.00001)):switchgain(global.switchtraining);
+    switchgain(c,x) = (c*x):(+~(*(1-c)));
+  };
+
 //-----------prefilter
-prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate):fi.highpass(global.prefilter_order,carrier-baudrate);
+prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate+10):fi.highpass(global.prefilter_order,carrier-baudrate-10);
 
 //---------------------------------release section
 
@@ -123,7 +137,7 @@ qam_single(carrier,baudrate,phase_error,input) = (phase_error,(input:prefilter(c
 qam_multi(input) = (input)<:par(i,global.num_band,(qam_single(global.frequency(i),global.baudrate)~(_))):>(!,_);
 
 //--------------------debug section
-qam_single_debug(carrier,baudrate,band_index,phase_error,input,clock) = (phase_error,(input:prefilter(carrier,baudrate))):demodulator(carrier)<:(si.bus(2),(sampler(clock)<:((decider,training_sequence(clock)):switchbits:remapper:(rolloff<:si.bus(6))),si.bus(2)),si.bus(2),clock):(compute_phaseerror,modulator(carrier),debug_bus(band_index,global.debug_num))
+qam_single_debug(carrier,baudrate,band_index,phase_error,input,clock) = (phase_error,(input:prefilter(carrier,baudrate):autogain)):demodulator(carrier)<:(si.bus(2),(sampler(clock)<:((decider,training_sequence(clock)):switchbits:remapper:(rolloff<:si.bus(6))),si.bus(2)),si.bus(2),clock):(compute_phaseerror,modulator(carrier),debug_bus(band_index,global.debug_num))
 with {
   // decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
 };
