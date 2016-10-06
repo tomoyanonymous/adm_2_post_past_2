@@ -2,22 +2,22 @@ import("stdfaust.lib");
 
 
 global =environment {
-  isDebug = 0;
+  isDebug = 1;
   // delaytime in ms
   delay_time = int(hslider("delayTime",100,1,128000,1));
   // delay_time = 500;
   baudrate = hslider("baudrate",500,100,800,0.1);
   // baudrate = 500;
-  num_band = 12;
+  num_band = 2;
   max_freq = 20000;
   min_freq = 250;
   freq_margin = (max_freq - min_freq)/(num_band);
   freq_list = par(i,num_band,i*freq_margin+min_freq+freq_margin/2);
   frequency(index) = ba.take(index+1,freq_list);
-  dem_rolloff_order = 1;
-  dem_rolloff_rate = 100;
-  mod_rolloff_order = 1;
-  mod_rolloff_rate = 100;
+  dem_rolloff_order = 3;
+  dem_rolloff_rate = hslider("dem_rolloffrate",500,100,800,0.1);
+  mod_rolloff_order = 3;
+  mod_rolloff_rate = hslider("mod_rolloffrate",500,100,800,0.1);
   switchtraining = checkbox("Training");
   PLLrate = hslider("PLLrate",1,0.01,15,0.01);
   PLLrate_training = hslider("PLLrate_training",2,0.01,15,0.01);
