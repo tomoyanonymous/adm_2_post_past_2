@@ -4,9 +4,9 @@ import("16qam.lib");
 process_pre =
 case{
   (0) => (qam_multi(global.base_carrier,global.num_band,global.baudrate)~(_)):(!,_);
-  (1) => (_,sample_clock(global.baudrate)):qam_multi_debug;
+  (1) => (((sample_clock(global.baudrate),_,_):qam_multi_debug(global.base_carrier,global.num_band,global.baudrate))~(_)):(!,si.bus(8));
 };
 
-  isDebug = 0;
+  isDebug = 1;
 process =process_pre(isDebug);
-// process = qam_multi(global.base_carrier,global.num_band,global.baudrate);
+// process = qam_multi_debug(global.base_carrier,global.num_band,global.baudrate);
