@@ -4,17 +4,16 @@ import("stdfaust.lib");
 global =environment {
   isDebug = 1;
   // delaytime in ms
-  delay_time = int(hslider("delayTime",100,1,128000,1));
-  baudrate = hslider("baudrate",500,100,800,0.1);
-  clock_duty = hslider("duty",0.75,0,1,0.01);
+  vel_c = 340.;
+  bauds_per_band = 8;
   num_band = 3;
-
+  baudrate = hslider("baudrate",500,100,800,0.1);
+  delay_time = int((bauds_per_band/baudrate)*ma.SR);
+  clock_duty = hslider("duty",0.75,0,1,0.01);
   //　一本のジェネレーターからキャリアを生成する場合、base_carrierの整数倍になる
   base_carrier = 300;
   freq_list = par(i,num_band,i*base_carrier);
   frequency(index) = ba.take(index+1,freq_list);
-
-
 
   dem_rolloff_order = 4;
   dem_rolloff_rate = hslider("dem_rolloffrate",500,100,800,0.1);
@@ -49,6 +48,13 @@ with {
   sinmod(input,carrierphase) = (carrierphase:sinwave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
   cosmod(input,carrierphase) = (carrierphase:coswave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
 };
+demodulator_mobile(phase,input) = (input,phase)<:(cosmod,sinmod)
+with {
+  sinwave = *(ma.PI*2):sin;
+  coswave = *(ma.PI*2):cos;
+  sinmod(input,carrierphase) = (carrierphase:sinwave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
+  cosmod(input,carrierphase) = (carrierphase:coswave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
+};
 
 // ----------------sampling section
 clockdatarecovery(rate) = fi.highpass(1,rate*0.8):abs:fi.resonbp(rate,1000,1):(>(0));
@@ -58,12 +64,31 @@ sampler(clock) =(ba.latch(c),ba.latch(c))
 with {
     c = clock:(>(global.clock_duty));
 };
+sampler_self(rate,in1,in2) = (in1,in2):sampler(clock_self)
+with{
+  clock_self = (in1,in2):(clockdatarecovery(rate),clockdatarecovery(rate)):>_;
+};
 
 // ---------------decide section
 
 decider = decide_mono,decide_mono
 with {
 decide_mono = _<:(abs,_):(>(2/3),>(0));
+};
+
+pilot_table1 = waveform{1,1,0},_:rdtable;
+pilot_table2 = waveform{1,0,0},_:rdtable;
+
+pilot_decider = (pilot_mono,pilot_mono)<:(&,(|:bitinv:*(2)),(xor:*(3))):>-(1):int<:(pilot_table1,1,pilot_table2,1)
+with{
+  bitinv(x) = 1- x;
+  pilot_mono= _:abs:(>(2/3));
+};
+// -------pilot tone section
+
+pilot_tone(baud) = pilot_reader<:(pilot_table1,1,pilot_table2,1)
+with{
+  pilot_reader = int(os.phasor(bauds_per_band))<:((mod(2):*(-1):+(1)),(>(0))):*:int;
 };
 
 // ---------training section
@@ -82,6 +107,7 @@ with{
   sbit3=selbit(bit3,tbit3);
   sbit4=selbit(bit4,tbit4);
 };
+
 // ----------------remapper section
 
 remapper(bit1,bit2,bit3,bit4) = remapper_mono(bit1,bit2),remapper_mono(bit3,bit4)
@@ -98,7 +124,11 @@ with {
 };
 
 //  ---------------modulator
-multiphasor(base_freq,band_num) = base_freq:os.lf_sawpos<:par(i,band_num,*(i+1));
+multiphasor(base_freq,band_num) = base_freq:os.lf_sawpos<:par(i,band_num,(*(i+1):fmod(1.)));
+multiphasor_pll(base_freq,band_num,phaseerror) = (base_freq+deltaphase):os.lf_sawpos<:par(i,band_num,(*(i+1):fmod(1.)))
+with{
+  deltaphase = phaseerror:fi.lowpass(1,global.PLL_rate);
+};
 
 modulator(phase,in1,in2) = phase<:(coswave,sinwave):(*(in1),*(in2)):+
 with {
@@ -139,7 +169,10 @@ qam_single(carrier,baudrate,carrier_phase,phase_error,input) = (phase_error,(inp
 qam_multi(input) = (input)<:par(i,global.num_band,(qam_single(global.frequency(i),global.baudrate)~(_))):>(!,_);
 
 //--------------------debug section
-qam_single_debug(carrier,baudrate,band_index,phase_error,input,clock,carrier_phase) = (phase_error,(input:prefilter(carrier,baudrate):autogain)):demodulator(carrier)<:(si.bus(2),(sampler(clock)<:((decider,training_sequence(clock)):switchbits:remapper:(rolloff<:si.bus(6))),si.bus(2)),si.bus(2),clock):(compute_phaseerror,modulator(carrier_phase),debug_bus(band_index,global.debug_num))
+qam_single_debug =case{
+    (carrier,baudrate,0,phase_error,input,clock,carrier_phase) =>_ ;
+  (carrier,baudrate,band_index,phase_error,input,clock,carrier_phase) =>(phase_error,(input:prefilter(carrier,baudrate):autogain)):demodulator(carrier)<:(si.bus(2),(sampler(clock)<:((decider,training_sequence(clock)):switchbits:remapper:(rolloff<:si.bus(6))),si.bus(2)),si.bus(2),clock):(compute_phaseerror,modulator(carrier_phase),debug_bus(band_index,global.debug_num));
+  }
 with {
   // decide_remap_rolloff = (decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(6);
 };
