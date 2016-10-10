@@ -164,18 +164,18 @@ autogain(input) = input/(gain_ratio+0.001)
 prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate+10):fi.highpass(global.prefilter_order,carrier-baudrate-10);
 
 //---------------------------------release section
-qam_pilot(carrier,baudrate,carrier_phase,input,clock) = ( ((carrier_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator ),(clock:pilot_tone(global.bauds_per_band):remapper:rolloff)):compute_phaseerror;
+qam_pilot(carrier,baudrate,dem_phase,mod_phase,input,clock) = ( ((dem_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator ),(clock:pilot_tone(global.bauds_per_band):remapper:rolloff<:si.bus(4))):(compute_phaseerror,((mod_phase,_,_):modulator));
 
-qam_single(carrier,baudrate,carrier_phase,input,clock) = (carrier_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator:((_,_,clock):sampler:decider:remapper:rolloff:(_,_,carrier_phase):modulator);
+qam_single(carrier,baudrate,dem_phase,mod_phase,input,clock) = (dem_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator:((_,_,clock):sampler:decider:remapper:rolloff:(mod_phase,_,_):modulator);
 
 qam = case{
 
-  (0,carrier,baudrate,carrier_phase,input,clock) => qam_pilot(carrier,baudrate,carrier_phase,input,clock);
+  (0,carrier,baudrate,dem_phase,mod_phase,input,clock) => qam_pilot(carrier,baudrate,dem_phase,mod_phase,input,clock);
 
-  (index,carrier,baudrate,carrier_phase,input,clock)=> qam_single(carrier,baudrate,carrier_phase,input,clock);
+  (index,carrier,baudrate,dem_phase,mod_phase,input,clock)=> qam_single(carrier,baudrate,dem_phase,mod_phase,input,clock);
 };
 
-qam_multi(base_freq,num_band,baudrate,phase_error,input) = ((phase_error:multiphasor_pll(base_freq,num_band)),(input<:si.bus(num_band)),(sample_clock(baudrate)<:si.bus(num_band)) )<:ro.interleave(num_band,3):par(i,num_band,(qam(i,global.frequency(i),global.baudrate))):(_,(si.bus(num_band-1):>_));
+qam_multi(base_freq,num_band,baudrate,phase_error,input) = ((phase_error:multiphasor_pll(base_freq,num_band)),multiphasor(base_freq,num_band),(input<:si.bus(num_band)),(sample_clock(baudrate)<:si.bus(num_band)) )<:ro.interleave(num_band,4):par(i,num_band,(qam(i,global.frequency(i),global.baudrate))):(_,(si.bus(num_band):>_));
 
 //--------------------debug section
 qam_single_debug =case{
