@@ -2,7 +2,7 @@ import("stdfaust.lib");
 
 
 global =environment {
-  isDebug = 1;
+
   // delaytime in ms
   vel_c = 340.;
   bauds_per_band = 8;
@@ -12,7 +12,7 @@ global =environment {
   clock_duty = hslider("duty",0.75,0,1,0.01);
   //　一本のジェネレーターからキャリアを生成する場合、base_carrierの整数倍になる
   base_carrier = 300;
-  freq_list = par(i,num_band,i*base_carrier);
+  freq_list = par(i,num_band,(i+1)*base_carrier);
   frequency(index) = ba.take(index+1,freq_list);
 
   dem_rolloff_order = 4;
@@ -38,17 +38,17 @@ with {
 
 
 
-demodulator(carrier,phaseerror,input) = (input,((carrier+deltaphase):carrierphasor) )<:(cosmod,sinmod)
-with {
-  deltaphase = phaseerror:fi.lowpass(1,global.PLL_rate);
-  // tablesize = 1<<16;
-  carrierphasor = os.lf_sawpos;
-  sinwave = *(ma.PI*2):sin;
-  coswave = *(ma.PI*2):cos;
-  sinmod(input,carrierphase) = (carrierphase:sinwave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
-  cosmod(input,carrierphase) = (carrierphase:coswave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
-};
-demodulator_mobile(phase,input) = (input,phase)<:(cosmod,sinmod)
+// demodulator(carrier,phaseerror,input) = (input,((carrier+deltaphase):carrierphasor) )<:(cosmod,sinmod)
+// with {
+//   deltaphase = phaseerror:fi.lowpass(1,global.PLL_rate);
+//   // tablesize = 1<<16;
+//   carrierphasor = os.lf_sawpos;
+//   sinwave = *(ma.PI*2):sin;
+//   coswave = *(ma.PI*2):cos;
+//   sinmod(input,carrierphase) = (carrierphase:sinwave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
+//   cosmod(input,carrierphase) = (carrierphase:coswave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
+// };
+demodulator(phase,input) = (input,phase)<:(cosmod,sinmod)
 with {
   sinwave = *(ma.PI*2):sin;
   coswave = *(ma.PI*2):cos;
@@ -56,6 +56,7 @@ with {
   cosmod(input,carrierphase) = (carrierphase:coswave:*(input)):*(2):fi.lowpass(global.dem_rolloff_order,global.dem_rolloff_rate);
 };
 
+demodulator_mobile(phase,input) = demodulator(phase,input);
 // ----------------sampling section
 clockdatarecovery(rate) = fi.highpass(1,rate*0.8):abs:fi.resonbp(rate,1000,1):(>(0));
 sample_clock(rate) = os.lf_sawpos(rate);
@@ -86,9 +87,9 @@ with{
 };
 // -------pilot tone section
 
-pilot_tone(baud) = pilot_reader<:(pilot_table1,1,pilot_table2,1)
+pilot_tone(bauds_per_band,baudrate) = pilot_reader<:(pilot_table1,1,pilot_table2,1)
 with{
-  pilot_reader = int(os.phasor(bauds_per_band))<:((mod(2):*(-1):+(1)),(>(0))):*:int;
+  pilot_reader = (baudrate/bauds_per_band):int(os.phasor(bauds_per_band))<:((fmod(2):*(-1):+(1)),(>(0))):*:int;
 };
 
 // ---------training section
@@ -162,11 +163,18 @@ autogain(input) = input/(gain_ratio+0.001)
 prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate+10):fi.highpass(global.prefilter_order,carrier-baudrate-10);
 
 //---------------------------------release section
+qam_pilot(carrier,baudrate,carrier_phase,input,clock) = ( ((carrier_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator ),(pilot_tone(global.bauds_per_band,baudrate):remapper:rolloff)):compute_phaseerror;
 
-qam_single(carrier,baudrate,carrier_phase,phase_error,input) = (phase_error,(input:prefilter(carrier,baudrate):autogain)):demodulator(carrier)<:(si.bus(2),(sampler(baudrate)<:(decider,((!,_):training_sequence)):switchbits:remapper:rolloff<:si.bus(4))):(compute_phaseerror,modulator(carrier_phase));
+qam_single(carrier,baudrate,carrier_phase,input,clock) = (carrier_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator:((_,_,clock):sampler:decider:remapper:rolloff:(_,_,carrier_phase):modulator);
 
+qam = case{
 
-qam_multi(input) = (input)<:par(i,global.num_band,(qam_single(global.frequency(i),global.baudrate)~(_))):>(!,_);
+  (0,carrier,baudrate,carrier_phase,input,clock) => qam_pilot(carrier,baudrate,carrier_phase,input,clock);
+
+  (index,carrier,baudrate,carrier_phase,input,clock)=> qam_single(carrier,baudrate,carrier_phase,input,clock);
+};
+
+qam_multi(base_freq,num_band,baudrate,phase_error,input) = ((phase_error:multiphasor_pll(base_freq,num_band)),(input<:si.bus(num_band)),(sample_clock(baudrate)<:si.bus(num_band)) )<:ro.interleave(num_band,3):par(i,num_band,(qam(i,global.frequency(i),global.baudrate))):(_,(si.bus(num_band-1):>_));
 
 //--------------------debug section
 qam_single_debug =case{
