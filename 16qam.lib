@@ -87,9 +87,10 @@ with{
 };
 // -------pilot tone section
 
-pilot_tone(bauds_per_band,baudrate) = pilot_reader<:(pilot_table1,1,pilot_table2,1)
+pilot_tone(bauds_per_band,clock) = clock:pilot_reader<:(pilot_table1,1,pilot_table2,1)
 with{
-  pilot_reader = (baudrate/bauds_per_band):int(os.phasor(bauds_per_band))<:((fmod(2):*(-1):+(1)),(>(0))):*:int;
+  count_negedge(length,clock) = (clock-(clock:mem)):(<(0)):((+:fmod(length))~(_));
+  pilot_reader = count_negedge(bauds_per_band)<:((fmod(2):*(-1):+(1)),(>(0))):*:int;
 };
 
 // ---------training section
@@ -163,7 +164,7 @@ autogain(input) = input/(gain_ratio+0.001)
 prefilter(carrier,baudrate) = fi.lowpass(global.prefilter_order,carrier+baudrate+10):fi.highpass(global.prefilter_order,carrier-baudrate-10);
 
 //---------------------------------release section
-qam_pilot(carrier,baudrate,carrier_phase,input,clock) = ( ((carrier_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator ),(pilot_tone(global.bauds_per_band,baudrate):remapper:rolloff)):compute_phaseerror;
+qam_pilot(carrier,baudrate,carrier_phase,input,clock) = ( ((carrier_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator ),(clock:pilot_tone(global.bauds_per_band):remapper:rolloff)):compute_phaseerror;
 
 qam_single(carrier,baudrate,carrier_phase,input,clock) = (carrier_phase,(input:prefilter(carrier,baudrate):autogain)):demodulator:((_,_,clock):sampler:decider:remapper:rolloff:(_,_,carrier_phase):modulator);
 
