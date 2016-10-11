@@ -84,7 +84,9 @@ with{
 pilot_tone(bauds_per_band,clock) = clock:pilot_reader<:(pilot_table1,1,pilot_table2,1)
 with{
   count_negedge(length,clock) = (clock-(clock:mem)):(<(0)):((+:fmod(length))~(_));
-  pilot_reader = count_negedge(bauds_per_band)<:((fmod(2):*(-1):+(1)),(>(0))):*:int;
+  count_threshold(length,threshold,clock) = ((>=(clock,threshold)),(<(clock',threshold))):(&):((+:modulo(length))~(_));
+  modulo(len) = /(len):ma.decimal:*(len):int;
+  pilot_reader = count_threshold(bauds_per_band,0.5)<:((modulo(2):*(-1):+(1)),(>(0))):*:int;
 };
 
 // ---------training section

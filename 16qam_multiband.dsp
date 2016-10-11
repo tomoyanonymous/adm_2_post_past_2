@@ -9,4 +9,3 @@ case{
 
   isDebug = 1;
 process =process_pre(isDebug);
-// process = qam_multi_debug(global.base_carrier,global.num_band,global.baudrate);
